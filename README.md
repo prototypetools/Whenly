@@ -127,6 +127,7 @@ Lihat `prisma/postgresql/init.sql` untuk referensi DDL jika migrasi gagal.
 - Akses fitur terkunci untuk Free (UI + server enforcement terverifikasi)
 - Subscriptions CRUD, mark-paid, extend (UI terhubung ke API)
 
+Deployment setup for Whenly.
 ## Lisensi
 
 Prototipe edukasi — bebas digunakan untuk pembelajaran.
