@@ -6,14 +6,11 @@ import { useState } from 'react';
 import { Field, InfoBanner } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/Toast';
 import { apiPost } from '@/lib/client';
+import { demoLogin, isDemoMode } from '@/lib/demo/client';
+import { startDemoSession } from '@/lib/demo/bootstrap';
+import { DEMO_ACCOUNTS, DEMO_PASSWORD } from '@/lib/demo/constants';
 
-const DEMO_ACCOUNTS = [
-  { email: 'demo@Whenly.id', label: 'Premium · data lengkap' },
-  { email: 'gratis@Whenly.id', label: 'Free · 5 langganan (batas kuota)' },
-  { email: 'pelajar@Whenly.id', label: 'Free · verifikasi pelajar pending' },
-];
-
-const DEMO_PASSWORD = 'demo12345';
+const DEMO_REDIRECT = '/dashboard';
 
 export function LoginForm() {
   const router = useRouter();
@@ -22,14 +19,51 @@ export function LoginForm() {
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const demoBuild = isDemoMode();
 
-  async function submit(nextEmail = email, nextPassword = password, redirect = '/dashboard') {
+  /**
+   * Setelah sesi demo dibuat, cookie-nya hanya terkirim pada request
+   * berikutnya. Karena itu navigasi harus memuat dokumen baru
+   * (`location.assign`), bukan navigasi SPA (`router.push`).
+   */
+  function goToDashboard() {
+    window.location.assign(DEMO_REDIRECT);
+  }
+
+  async function guestLogin() {
     setBusy(true);
     setError(null);
     try {
+      const ok = await startDemoSession();
+      if (!ok) throw new Error('Sesi demo tidak bisa dibuat.');
+      goToDashboard();
+    } catch {
+      setBusy(false);
+      setError('Gagal menyiapkan sesi demo. Muat ulang halaman lalu coba lagi.');
+    }
+  }
+
+  async function submit(nextEmail = email, nextPassword = password) {
+    setBusy(true);
+    setError(null);
+    try {
+      if (isDemoMode()) {
+        try {
+          await demoLogin(nextEmail, nextPassword);
+          toast.success('Berhasil masuk. Selamat datang kembali!');
+          goToDashboard();
+          return;
+        } catch (e: any) {
+          const message = e.message === 'INVALID_CREDENTIALS' ? 'Email atau password salah.' : e.message || 'Gagal masuk.';
+          setError(message);
+          toast.error(message);
+          setBusy(false);
+          return;
+        }
+      }
       await apiPost('/api/auth/login', { email: nextEmail, password: nextPassword });
       toast.success('Berhasil masuk. Selamat datang kembali!');
-      router.push(redirect);
+      router.push(DEMO_REDIRECT);
       router.refresh();
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Gagal masuk.';
@@ -48,6 +82,12 @@ export function LoginForm() {
       }}
     >
       {error ? <InfoBanner tone="danger" title="Tidak bisa masuk">{error}</InfoBanner> : null}
+
+      {demoBuild ? (
+        <button type="button" className="btn-primary w-full" onClick={guestLogin} disabled={busy}>
+          {busy ? 'Menyiapkan sesi…' : '🚀 Masuk sebagai tamu (paket Premium)'}
+        </button>
+      ) : null}
 
       <Field label="Email" htmlFor="email" required>
         <input
@@ -77,16 +117,18 @@ export function LoginForm() {
         />
       </Field>
 
-      <button type="submit" className="btn-primary w-full" disabled={busy}>
+      <button type="submit" className="btn-secondary w-full" disabled={busy}>
         {busy ? 'Memeriksa…' : 'Masuk'}
       </button>
 
-      <p className="text-center text-sm text-brand-muted">
-        Belum punya akun?{' '}
-        <Link href="/register" className="link">
-          Daftar gratis
-        </Link>
-      </p>
+      {demoBuild ? null : (
+        <p className="text-center text-sm text-brand-muted">
+          Belum punya akun?{' '}
+          <Link href="/register" className="link">
+            Daftar gratis
+          </Link>
+        </p>
+      )}
 
       <div className="rounded-xl border border-brand-line bg-violet-50/50 p-4">
         <p className="text-xs font-semibold uppercase tracking-wide text-brand-muted">Akun demo (siap pakai)</p>
@@ -111,6 +153,12 @@ export function LoginForm() {
         </ul>
         <p className="mt-2 text-xs text-brand-muted">Password akun demo: {DEMO_PASSWORD}</p>
       </div>
+
+      {demoBuild ? (
+        <p className="text-center text-xs text-brand-muted">
+          Mode demo: data disimpan sementara di server (tanpa database) dan bisa direset kapan saja.
+        </p>
+      ) : null}
     </form>
   );
 }

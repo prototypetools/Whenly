@@ -19,6 +19,8 @@ import bcrypt from 'bcryptjs';
 import { prisma } from './db';
 import { ApiError } from './api';
 import { syncPlanState } from './billing';
+import { isDemoBuild } from './demo/constants';
+import { demoUserFromToken, type DemoUserRow } from './demo/dataset';
 
 export const SESSION_COOKIE = process.env.SESSION_COOKIE_NAME || 'Whenly_session';
 const SESSION_TTL_DAYS = Number(process.env.SESSION_TTL_DAYS || 30);
@@ -148,10 +150,39 @@ export async function destroyOtherSessions(userId: string): Promise<number> {
 // Pengambilan pengguna
 // ------------------------------------------------------------------
 
+/** Memetakan baris data demo (server) ke bentuk SessionUser. */
+function demoRowToSessionUser(row: DemoUserRow): SessionUser {
+  return {
+    id: row.id,
+    email: row.email,
+    name: row.name,
+    timezone: row.timezone,
+    locale: row.locale,
+    avatarColor: row.avatarColor,
+    planId: row.planId,
+    planCycle: row.planCycle,
+    planStartedAt: row.planStartedAt,
+    planExpiresAt: row.planExpiresAt,
+    cancelAtPeriodEnd: row.cancelAtPeriodEnd,
+    paymentStatus: row.paymentStatus,
+    studentStatus: row.studentStatus,
+    isDemo: true,
+    createdAt: row.createdAt,
+  };
+}
+
 /** Mengembalikan pengguna yang sedang login, atau null. Aman dipanggil di mana saja. */
 export async function getCurrentUser(): Promise<SessionUser | null> {
   const token = cookies().get(SESSION_COOKIE)?.value;
   if (!token) return null;
+
+  // Mode demo: token `tok_<userId>` dipetakan ke data demo di memori server,
+  // tanpa menyentuh database sama sekali.
+  if (isDemoBuild()) {
+    const demo = demoUserFromToken(token);
+    if (demo) return demoRowToSessionUser(demo);
+    return null;
+  }
 
   const session = await prisma.session.findUnique({
     where: { id: hashToken(token) },

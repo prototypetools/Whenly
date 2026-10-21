@@ -5,6 +5,8 @@
  */
 
 import { prisma } from './db';
+import { isDemoBuild } from './demo/constants';
+import { demoStore } from './demo/dataset';
 import {
   BillingCycle,
   FAIR_USE_SOFT_CAP,
@@ -65,9 +67,13 @@ export async function getEntitlements(userId: string, planId: string, extra?: {
   const plan = getPlan(planId);
   const limits = getPlanLimits(planId);
 
-  const usedSlots = await prisma.subscription.count({
-    where: { userId, status: { notIn: ['canceled', 'expired'] } },
-  });
+  const usedSlots = isDemoBuild()
+    ? demoStore.subscriptions.filter(
+        (s) => s.userId === userId && s.status !== 'canceled' && s.status !== 'expired',
+      ).length
+    : await prisma.subscription.count({
+        where: { userId, status: { notIn: ['canceled', 'expired'] } },
+      });
 
   const maxActiveSubs = effectiveMaxSlots(limits.maxActiveSubs);
 

@@ -3,6 +3,7 @@ import { COMPARISON_ROWS, PLANS, getPlan, yearlySavings } from '@/config/plans';
 import { formatIDR } from '@/lib/money';
 import { Badge, Card, InfoBanner, LinkButton } from '@/components/ui/primitives';
 import { getCurrentUser } from '@/lib/auth';
+import { isDemoBuild } from '@/lib/demo/constants';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,6 +44,7 @@ export default async function LandingPage() {
   const user = await getCurrentUser();
   const premium = getPlan('premium');
   const student = getPlan('student');
+  const demoBuild = isDemoBuild();
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-violet-50 via-white to-white">
@@ -89,15 +91,17 @@ export default async function LandingPage() {
               terpotong diam-diam.
             </p>
             <div className="mt-7 flex flex-wrap items-center gap-3">
-              <LinkButton href={user ? '/dashboard' : '/register'} className="px-5 py-3">
-                {user ? 'Lanjut ke dashboard' : 'Mulai gratis — paket Free'}
+              <LinkButton href={demoBuild ? '/guest' : user ? '/dashboard' : '/register'} className="px-5 py-3">
+                {demoBuild ? 'Coba demo — masuk sebagai tamu' : user ? 'Lanjut ke dashboard' : 'Mulai gratis — paket Free'}
               </LinkButton>
-              <LinkButton href="/login" variant="secondary" className="px-5 py-3">
-                Masuk dengan akun demo
+              <LinkButton href={demoBuild ? '/guest' : '/login'} variant="secondary" className="px-5 py-3">
+                {demoBuild ? 'Masuk sebagai tamu' : 'Masuk dengan akun demo'}
               </LinkButton>
             </div>
             <p className="mt-3 text-xs text-brand-muted">
-              Paket Free mencatat hingga 5 langganan aktif. Tanpa kartu kredit, tanpa unduhan.
+              {demoBuild
+                ? 'Build ini memakai mode demo tanpa database: pengunjung masuk sebagai tamu dan data disimpan di peramban.'
+                : 'Paket Free mencatat hingga 5 langganan aktif. Tanpa kartu kredit, tanpa unduhan.'}
             </p>
           </div>
 
@@ -146,6 +150,13 @@ export default async function LandingPage() {
               <li>
                 <strong>Data demo ditandai jelas.</strong> Semua akun contoh diberi label <em>DEMO</em>.
               </li>
+              {demoBuild ? (
+                <li>
+                  <strong>Deploy ini berjalan tanpa database.</strong> Data disimpan di peramban (localStorage). Fitur
+                  yang memerlukan server database — billing sandbox, kategori kustom, ekspor berkas, dan verifikasi
+                  pelajar — belum aktif.
+                </li>
+              ) : null}
             </ul>
           </InfoBanner>
         </section>
@@ -208,7 +219,7 @@ export default async function LandingPage() {
                   </ul>
                   <div className="mt-5">
                     <LinkButton
-                      href={user ? '/pricing' : '/register'}
+                      href={demoBuild ? '/pricing' : user ? '/pricing' : '/register'}
                       variant={plan.recommended ? 'primary' : 'secondary'}
                       className="w-full"
                     >
@@ -273,12 +284,11 @@ export default async function LandingPage() {
             <h2 className="text-xl font-bold text-brand-ink">Coba tanpa mendaftar</h2>
             <p className="mt-1.5 text-sm text-brand-muted">
               Tiga akun demo sudah terisi data. Password semuanya <code className="rounded bg-white px-1.5 py-0.5 text-xs">demo12345</code>.
-            </p>
-            <div className="mt-5 grid gap-4 sm:grid-cols-3">
+            </p>            <div className="mt-5 grid gap-4 sm:grid-cols-3">
               {[
-                { email: 'demo@Whenly.id', label: 'Premium', body: '12 langganan, 2 free trial, riwayat pembayaran 6 bulan, anggaran Rp500.000, kategori kustom.' },
-                { email: 'gratis@Whenly.id', label: 'Free', body: '5 langganan aktif — persis di batas kuota paket Free, untuk mencoba pesan batas tercapai.' },
-                { email: 'pelajar@Whenly.id', label: 'Free + verifikasi', body: 'Pengajuan verifikasi pelajar berstatus pending untuk mencoba alur demo.' },
+                { email: 'demo@subscriptly.id', label: 'Premium', body: '12 langganan, 2 free trial, riwayat pembayaran 6 bulan, anggaran Rp500.000, kategori kustom.' },
+                { email: 'gratis@subscriptly.id', label: 'Free', body: '5 langganan aktif — persis di batas kuota paket Free, untuk mencoba pesan batas tercapai.' },
+                { email: 'pelajar@subscriptly.id', label: 'Free + verifikasi', body: 'Pengajuan verifikasi pelajar berstatus pending untuk mencoba alur demo.' },
               ].map((account) => (
                 <div key={account.email} className="rounded-xl border border-brand-line bg-white p-4">
                   <p className="text-sm font-semibold text-brand-ink">{account.email}</p>
@@ -290,8 +300,13 @@ export default async function LandingPage() {
               ))}
             </div>
             <div className="mt-5">
-              <LinkButton href="/login">Masuk ke akun demo</LinkButton>
+              <LinkButton href={demoBuild ? '/guest' : '/login'}>Masuk ke akun demo</LinkButton>
             </div>
+            {demoBuild ? (
+              <p className="mt-3 text-xs text-brand-muted">
+                Tombol di atas membuka dashboard dengan akun Premium dan data contoh — tanpa perlu mengetik apa pun.
+              </p>
+            ) : null}
           </Card>
         </section>
       </main>

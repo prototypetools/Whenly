@@ -13,6 +13,7 @@ import Link from 'next/link';
 import { Badge, Card, CardHeader, EmptyState } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/Toast';
 import { apiPatch, ApiClientError } from '@/lib/client';
+import { demoOp, isDemoMode } from '@/lib/demo/client';
 import { USAGE_FREQUENCIES } from '@/lib/categories';
 import { formatIDR } from '@/lib/money';
 
@@ -35,7 +36,11 @@ export function ValueChecker({ items }: { items: ValueItem[] }) {
   async function update(id: string, name: string, payload: Record<string, unknown>) {
     setBusyId(id);
     try {
-      await apiPatch(`/api/subscriptions/${id}`, payload);
+      if (isDemoMode()) {
+        await demoOp({ op: 'sub.update', id, data: payload });
+      } else {
+        await apiPatch(`/api/subscriptions/${id}`, payload);
+      }
       toast.success(`Penilaian ${name} diperbarui.`);
       router.refresh();
     } catch (error) {

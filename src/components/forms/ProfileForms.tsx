@@ -11,6 +11,7 @@ import { Card, CardHeader, Field, InfoBanner } from '@/components/ui/primitives'
 import { Modal } from '@/components/ui/Modal';
 import { useToast } from '@/components/ui/Toast';
 import { apiPatch, apiPost, apiDelete, ApiClientError } from '@/lib/client';
+import { demoLogout, demoOp, isDemoMode } from '@/lib/demo/client';
 
 const TIMEZONE_OPTIONS = [
   'Asia/Jakarta',
@@ -51,7 +52,11 @@ export function ProfileSettingsForm({
     setBusy(true);
     setError(null);
     try {
-      await apiPatch('/api/profile', { name: name.trim(), timezone, locale, avatarColor });
+      if (isDemoMode()) {
+        await demoOp({ op: 'profile.save', name: name.trim(), timezone, avatarColor });
+      } else {
+        await apiPatch('/api/profile', { name: name.trim(), timezone, locale, avatarColor });
+      }
       toast.success('Profil diperbarui.', 'Perubahan berlaku pada semua halaman.');
       router.refresh();
     } catch (err) {
@@ -151,6 +156,13 @@ export function PasswordForm() {
     setBusy(true);
     setError(null);
     try {
+      if (isDemoMode()) {
+        toast.success('Mode demo: password tidak diubah.', 'Akun demo memakai password tetap (demo12345).');
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+        return;
+      }
       const result = await apiPost<{ updated: boolean; otherSessionsRemoved: number }>('/api/profile/password', {
         currentPassword,
         newPassword,
@@ -253,6 +265,13 @@ export function DangerZone({ subscriptionCount }: { subscriptionCount: number })
     setBusy(true);
     setError(null);
     try {
+      if (isDemoMode()) {
+        await demoOp({ op: 'account.delete' });
+        toast.success('Data langganan dihapus.', 'Mode demo: seluruh langganan akun ini dihapus.');
+        setResetText('');
+        router.refresh();
+        return;
+      }
       const result = await apiPost<{ removedSubscriptions: number; removedPayments: number }>('/api/account', {
         action: 'reset-data',
         confirm: 'HAPUS',
@@ -276,6 +295,14 @@ export function DangerZone({ subscriptionCount }: { subscriptionCount: number })
     setBusy(true);
     setError(null);
     try {
+      if (isDemoMode()) {
+        await demoOp({ op: 'account.delete' });
+        await demoLogout();
+        toast.success('Akun demo dihapus.', 'Sesi demo berakhir.');
+        router.replace('/login');
+        router.refresh();
+        return;
+      }
       await apiDelete('/api/account', { password: deletePassword, confirm: 'HAPUS PERMANEN' });
       toast.success('Akun dihapus.', 'Semoga cepat bertemu lagi!');
       router.replace('/login');

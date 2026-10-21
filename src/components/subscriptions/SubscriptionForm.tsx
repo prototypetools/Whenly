@@ -6,6 +6,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Field, InfoBanner } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/Toast';
 import { apiPatch, apiPost, ApiClientError } from '@/lib/client';
+import { demoAddSub, demoUpdateSub, isDemoMode } from '@/lib/demo/client';
 import { addDaysISO, addMonthsClamped, todayISO } from '@/lib/dates';
 import { parseIDRInput } from '@/lib/money';
 import { USAGE_FREQUENCIES, type CategoryLike } from '@/lib/categories';
@@ -203,6 +204,20 @@ export function SubscriptionFormModal({
 
     setBusy(true);
     try {
+      if (isDemoMode()) {
+        // Mode demo: data ditulis ke penyimpanan demo di server (tanpa database).
+        if (isEditing && editingId) {
+          await demoUpdateSub('', editingId, payload);
+          toast.success(`${payload.name} diperbarui.`);
+        } else {
+          await demoAddSub('', payload);
+          toast.success(`${payload.name} ditambahkan.`, 'Total pengeluaran dan grafik diperbarui otomatis.');
+        }
+        onClose();
+        router.refresh();
+        return;
+      }
+
       if (isEditing && editingId) {
         await apiPatch(`/api/subscriptions/${editingId}`, payload);
         toast.success(`${payload.name} diperbarui.`);
@@ -213,6 +228,10 @@ export function SubscriptionFormModal({
       onClose();
       router.refresh();
     } catch (error) {
+      if (isDemoMode()) {
+        toast.error(error instanceof Error ? error.message : 'Gagal menyimpan langganan pada mode demo.');
+        return;
+      }
       if (error instanceof ApiClientError) {
         toast.error(error.message, error.code === 'PLAN_LIMIT_REACHED' ? 'Kamu bisa upgrade paket untuk menambah lebih banyak.' : undefined);
         if (error.code === 'PLAN_LIMIT_REACHED') setErrors({ name: error.message });

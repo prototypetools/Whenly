@@ -11,6 +11,7 @@ import { useRouter } from 'next/navigation';
 import { Card, CardHeader, Field, InfoBanner, ProgressBar } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/Toast';
 import { apiPut, ApiClientError } from '@/lib/client';
+import { demoOp, isDemoMode } from '@/lib/demo/client';
 import { formatIDR, formatPercent, parseIDRInput } from '@/lib/money';
 
 export function BudgetForm({
@@ -42,6 +43,17 @@ export function BudgetForm({
     setBusy(true);
     setError(null);
     try {
+      if (isDemoMode()) {
+        await demoOp({
+          op: 'budget.save',
+          monthlyLimit: limitNumber,
+          warnAtPercent: warnAtNumber,
+          notes: notes.trim() || null,
+        });
+        toast.success('Anggaran bulanan disimpan.', `Batas: ${formatIDR(limitNumber)} per bulan.`);
+        router.refresh();
+        return;
+      }
       await apiPut('/api/budget', {
         monthlyLimit: limitNumber,
         warnAtPercent: warnAtNumber,

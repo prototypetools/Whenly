@@ -12,6 +12,7 @@ import { Badge, Card, CardHeader, EmptyState, Field, InfoBanner } from '@/compon
 import { ConfirmDialog } from '@/components/ui/Modal';
 import { useToast } from '@/components/ui/Toast';
 import { apiPost, apiDelete, ApiClientError } from '@/lib/client';
+import { demoOp, isDemoMode } from '@/lib/demo/client';
 import { resolveCategories } from '@/lib/categories';
 
 export interface CustomCategory {
@@ -48,7 +49,11 @@ export function CategoryManager({
     setBusy(true);
     setError(null);
     try {
-      await apiPost('/api/categories', { name: name.trim(), emoji, color });
+      if (isDemoMode()) {
+        await demoOp({ op: 'category.create', name: name.trim(), emoji, color });
+      } else {
+        await apiPost('/api/categories', { name: name.trim(), emoji, color });
+      }
       toast.success('Kategori kustom dibuat.', `${emoji} ${name.trim()}`);
       setName('');
       router.refresh();
@@ -65,7 +70,11 @@ export function CategoryManager({
     setBusy(true);
     setError(null);
     try {
-      await apiDelete('/api/categories', { id: category.id });
+      if (isDemoMode()) {
+        await demoOp({ op: 'category.delete', id: category.id });
+      } else {
+        await apiDelete('/api/categories', { id: category.id });
+      }
       toast.success('Kategori dihapus.', category.name);
       setDeleteTarget(null);
       router.refresh();

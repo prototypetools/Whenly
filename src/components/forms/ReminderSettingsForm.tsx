@@ -11,6 +11,7 @@ import { useRouter } from 'next/navigation';
 import { Card, CardHeader, Field, InfoBanner } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/Toast';
 import { apiPut, ApiClientError } from '@/lib/client';
+import { demoOp, isDemoMode } from '@/lib/demo/client';
 
 export function ReminderSettingsForm({
   initial,
@@ -30,6 +31,12 @@ export function ReminderSettingsForm({
     setBusy(true);
     setError(null);
     try {
+      if (isDemoMode()) {
+        await demoOp({ op: 'reminder.save', defaultDaysBefore: Number(days), inAppEnabled: inApp });
+        toast.success('Pengaturan pengingat disimpan.', `Pengingat default: H-${days}.`);
+        router.refresh();
+        return;
+      }
       await apiPut('/api/reminders', {
         defaultDaysBefore: Number(days),
         inAppEnabled: inApp,

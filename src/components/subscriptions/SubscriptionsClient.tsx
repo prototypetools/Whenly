@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/Toast';
 import { downloadFile } from '@/lib/client';
+import { isDemoMode } from '@/lib/demo/client';
 import { categoryById, resolveCategories, usageLabel, type CategoryLike } from '@/lib/categories';
 import { countdownLabel, daysFromToday, formatDateID, todayISO } from '@/lib/dates';
 import { formatIDR, formatPercent } from '@/lib/money';
@@ -205,6 +206,10 @@ export function SubscriptionsClient({
   async function exportCsv() {
     setExporting(true);
     try {
+      if (isDemoMode()) {
+        toast.error('Ekspor CSV perlu server database.', 'Fitur ini dinonaktifkan pada mode demo.');
+        return;
+      }
       const filename = await downloadFile('/api/export/csv?type=subscriptions', 'Whenly-langganan.csv');
       toast.success('Laporan CSV diunduh.', filename);
     } catch (error) {

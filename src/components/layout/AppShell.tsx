@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useState, type ReactNode } from 'react';
 import { useToast } from '@/components/ui/Toast';
 import { apiPost } from '@/lib/client';
+import { demoLogout, isDemoMode } from '@/lib/demo/client';
 import { cx } from '@/components/ui/primitives';
 
 export interface ShellUser {
@@ -35,6 +36,7 @@ export function AppShell({ user, children }: { user: ShellUser; children: ReactN
   const toast = useToast();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const demo = isDemoMode();
 
   const isPremiumFeature = user.planId === 'free';
 
@@ -61,7 +63,11 @@ export function AppShell({ user, children }: { user: ShellUser; children: ReactN
   async function logout() {
     setBusy(true);
     try {
-      await apiPost('/api/auth/logout');
+      if (isDemoMode()) {
+        await demoLogout();
+      } else {
+        await apiPost('/api/auth/logout');
+      }
       toast.success('Kamu sudah keluar.');
       router.push('/login');
       router.refresh();
@@ -188,7 +194,9 @@ export function AppShell({ user, children }: { user: ShellUser; children: ReactN
         <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 sm:py-8">{children}</main>
 
         <footer className="mx-auto w-full max-w-7xl px-4 pb-10 pt-2 text-xs text-brand-muted sm:px-6">
-          Whenly · prototype full-stack. Data disimpan di database server dan hanya dapat diakses pemiliknya.
+          {demo
+            ? 'Whenly · mode demo. Data disimpan sementara di server dan tidak dipakai untuk produksi.'
+            : 'Whenly · prototype full-stack. Data disimpan di database server dan hanya dapat diakses pemiliknya.'}
         </footer>
       </div>
     </div>

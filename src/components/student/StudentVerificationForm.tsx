@@ -14,6 +14,7 @@ import { useRouter } from 'next/navigation';
 import { Badge, Card, CardHeader, Field, InfoBanner } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/Toast';
 import { apiPost, ApiClientError } from '@/lib/client';
+import { demoOp, isDemoMode } from '@/lib/demo/client';
 import { formatDateID } from '@/lib/dates';
 
 export interface VerificationRecord {
@@ -70,13 +71,24 @@ export function StudentVerificationForm({
     setBusy(true);
     setError(null);
     try {
-      await apiPost('/api/student/verify', {
-        fullName: fullName.trim(),
-        institution: institution.trim(),
-        studentNumber: studentNumber.trim(),
-        studentEmail: studentEmail.trim() || null,
-        note: note.trim() || null,
-      });
+      if (isDemoMode()) {
+        await demoOp({
+          op: 'student.submit',
+          fullName: fullName.trim(),
+          institution: institution.trim(),
+          studentNumber: studentNumber.trim(),
+          studentEmail: studentEmail.trim() || null,
+          note: note.trim() || null,
+        });
+      } else {
+        await apiPost('/api/student/verify', {
+          fullName: fullName.trim(),
+          institution: institution.trim(),
+          studentNumber: studentNumber.trim(),
+          studentEmail: studentEmail.trim() || null,
+          note: note.trim() || null,
+        });
+      }
       toast.success(
         'Pengajuan verifikasi dikirim (demo).',
         'Status sekarang: menunggu peninjauan. Gunakan tombol demo di halaman ini untuk mensimulasikan keputusan.',
@@ -95,7 +107,12 @@ export function StudentVerificationForm({
     setBusy(true);
     setError(null);
     try {
-      await apiPost('/api/student/review', { status, reviewNote: reviewNote.trim() || null });
+      if (isDemoMode()) {
+        const id = verification?.id ?? 'demo_verif_student';
+        await demoOp({ op: 'student.review', id, decision: status, reviewNote: reviewNote.trim() || null });
+      } else {
+        await apiPost('/api/student/review', { status, reviewNote: reviewNote.trim() || null });
+      }
       toast.success(
         status === 'approved' ? 'Status pelajar disetujui (demo).' : 'Status pelajar ditolak (demo).',
         status === 'approved'

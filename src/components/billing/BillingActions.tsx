@@ -12,6 +12,7 @@ import { ConfirmDialog } from '@/components/ui/Modal';
 import { InfoBanner } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/Toast';
 import { apiPost, ApiClientError } from '@/lib/client';
+import { demoOp, isDemoMode } from '@/lib/demo/client';
 
 export function BillingActions({
   planId,
@@ -34,7 +35,11 @@ export function BillingActions({
     setBusy(true);
     setError(null);
     try {
-      await apiPost('/api/billing/renewal', { action });
+      if (isDemoMode()) {
+        await demoOp({ op: action === 'cancel' ? 'plan.cancelRenewal' : 'plan.resumeRenewal' });
+      } else {
+        await apiPost('/api/billing/renewal', { action });
+      }
       toast.success(
         action === 'cancel' ? 'Perpanjangan otomatis dibatalkan.' : 'Perpanjangan otomatis diaktifkan kembali.',
         action === 'cancel'

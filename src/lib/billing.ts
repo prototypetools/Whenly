@@ -19,6 +19,8 @@ import { prisma } from './db';
 import { ApiError } from './api';
 import { getPlan, planPrice, BillingCycle } from '@/config/plans';
 import { addMonthsClamped, todayISO, toISODate } from './dates';
+import { isDemoBuild } from './demo/constants';
+import { demoStore } from './demo/dataset';
 import type { SessionUser } from './auth';
 
 export const BILLING_PROVIDER = process.env.BILLING_PROVIDER || 'mock';
@@ -90,6 +92,36 @@ export async function createCheckout(
     throw new ApiError(400, 'INVALID_PLAN', 'Paket Free tidak perlu checkout. Gunakan aksi downgrade.');
   }
 
+  if (isDemoBuild()) {
+    const event = {
+      id: `demo_checkout_${Math.random().toString(36).slice(2, 10)}`,
+      userId,
+      type: 'plan_selected',
+      planId: plan.id,
+      cycle,
+      amount,
+      status: 'pending',
+      provider: BILLING_PROVIDER,
+      providerRef: null,
+      note: SANDBOX_NOTE,
+      createdAt: new Date(),
+    };
+    demoStore.billingEvents.push(event);
+
+    return {
+      checkoutId: event.id,
+      planId: plan.id,
+      planName: plan.name,
+      cycle,
+      amount,
+      provider: BILLING_PROVIDER,
+      providerLabel: providerLabel(),
+      status: 'pending',
+      sandbox: true,
+      note: SANDBOX_NOTE,
+    };
+  }
+
   const event = await prisma.billingEvent.create({
     data: {
       userId,
@@ -132,6 +164,74 @@ export interface ActivatedPlan {
  */
 export async function confirmCheckout(userId: string, checkoutId: string): Promise<ActivatedPlan> {
   assertProviderConfigured();
+
+  if (isDemoBuild()) {
+    const event = demoStore.billingEvents.find(
+      (e) => e.id === checkoutId && e.userId === userId && e.type === 'plan_selected' && e.status === 'pending',
+    );
+    if (!event || !event.planId) {
+      throw new ApiError(404, 'CHECKOUT_NOT_FOUND', 'Sesi checkout tidak ditemukan atau sudah diproses.');
+    }
+    const cycle = (event.cycle as BillingCycle) ?? 'monthly';
+    const plan = getPlan(event.planId);
+    const amount = event.amount || planPrice(plan.id, cycle);
+    const periodEndISO = addBillingCycle(todayISO(), cycle);
+    const providerRef = `MOCK-${randomBytes(4).toString('hex').toUpperCase()}`;
+
+    demoStore.memberships
+      .filter((m) => m.userId === userId && m.status === 'active')
+      .forEach((m) => {
+        m.status = 'expired';
+        m.canceledAt = new Date();
+        m.note = 'Digantikan oleh paket baru.';
+      });
+    demoStore.memberships.push({
+      id: `demo_membership_${Math.random().toString(36).slice(2, 10)}`,
+      userId,
+      planId: plan.id,
+      status: 'active',
+      cycle,
+      pricePaid: amount,
+      paymentStatus: 'demo',
+      startedAt: new Date(),
+      currentPeriodEnd: new Date(`${periodEndISO}T00:00:00.000Z`),
+      cancelAtPeriodEnd: false,
+      canceledAt: null,
+      note: `Aktivasi simulasi sandbox (${providerRef}).`,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const userRow = demoStore.users.find((u) => u.id === userId);
+    if (userRow) {
+      userRow.planId = plan.id;
+      userRow.planCycle = cycle;
+      userRow.planStartedAt = new Date();
+      userRow.planExpiresAt = new Date(`${periodEndISO}T00:00:00.000Z`);
+      userRow.cancelAtPeriodEnd = false;
+      userRow.paymentStatus = 'demo';
+      userRow.updatedAt = new Date();
+    }
+
+    event.status = 'demo';
+    event.providerRef = providerRef;
+    event.note = `${SANDBOX_NOTE} Ref: ${providerRef}`;
+    demoStore.billingEvents.push({
+      id: `demo_event_${Math.random().toString(36).slice(2, 10)}`,
+      userId,
+      type: 'plan_activated',
+      planId: plan.id,
+      cycle,
+      amount,
+      status: 'demo',
+      provider: BILLING_PROVIDER,
+      providerRef,
+      note: `Paket ${plan.name} aktif hingga ${periodEndISO} (simulasi sandbox).`,
+      createdAt: new Date(),
+    });
+
+    return { planId: plan.id, planCycle: cycle, currentPeriodEnd: periodEndISO, amount, providerRef };
+  }
 
   const event = await prisma.billingEvent.findFirst({
     where: { id: checkoutId, userId, type: 'plan_selected', status: 'pending' },
@@ -206,6 +306,39 @@ export async function confirmCheckout(userId: string, checkoutId: string): Promi
 
 /** Turun ke paket Free segera (mis. pengguna memilih Free atau periode habis). */
 export async function downgradeToFree(userId: string, reason: string): Promise<void> {
+  if (isDemoBuild()) {
+    demoStore.memberships
+      .filter((m) => m.userId === userId && (m.status === 'active' || m.status === 'scheduled'))
+      .forEach((m) => {
+        m.status = 'canceled';
+        m.canceledAt = new Date();
+        m.note = reason;
+      });
+    const userRow = demoStore.users.find((u) => u.id === userId);
+    if (userRow) {
+      userRow.planId = 'free';
+      userRow.planCycle = 'monthly';
+      userRow.planExpiresAt = null;
+      userRow.cancelAtPeriodEnd = false;
+      userRow.paymentStatus = 'none';
+      userRow.updatedAt = new Date();
+    }
+    demoStore.billingEvents.push({
+      id: `demo_event_${Math.random().toString(36).slice(2, 10)}`,
+      userId,
+      type: 'plan_changed',
+      planId: 'free',
+      cycle: 'monthly',
+      amount: 0,
+      status: 'demo',
+      provider: BILLING_PROVIDER,
+      providerRef: null,
+      note: reason,
+      createdAt: new Date(),
+    });
+    return;
+  }
+
   await prisma.$transaction(async (tx) => {
     await tx.membership.updateMany({
       where: { userId, status: { in: ['active', 'scheduled'] } },
@@ -240,6 +373,38 @@ export async function downgradeToFree(userId: string, reason: string): Promise<v
 
 /** Membatalkan perpanjangan otomatis; akses tetap aktif hingga akhir periode. */
 export async function cancelRenewal(userId: string): Promise<void> {
+  if (isDemoBuild()) {
+    const userRow = demoStore.users.find((u) => u.id === userId);
+    if (!userRow) throw new ApiError(404, 'USER_NOT_FOUND', 'Pengguna tidak ditemukan.');
+    if (userRow.planId === 'free') {
+      throw new ApiError(400, 'NO_ACTIVE_PLAN', 'Paket Free tidak memiliki perpanjangan untuk dibatalkan.');
+    }
+    userRow.cancelAtPeriodEnd = true;
+    userRow.updatedAt = new Date();
+    demoStore.memberships
+      .filter((m) => m.userId === userId && m.status === 'active')
+      .forEach((m) => {
+        m.cancelAtPeriodEnd = true;
+        m.note = 'Perpanjangan otomatis dibatalkan oleh pengguna.';
+      });
+    demoStore.billingEvents.push({
+      id: `demo_event_${Math.random().toString(36).slice(2, 10)}`,
+      userId,
+      type: 'renewal_canceled',
+      planId: userRow.planId,
+      cycle: userRow.planCycle,
+      amount: 0,
+      status: 'demo',
+      provider: BILLING_PROVIDER,
+      providerRef: null,
+      note: userRow.planExpiresAt
+        ? `Akses tetap aktif sampai ${toISODate(userRow.planExpiresAt)} (simulasi sandbox).`
+        : 'Perpanjangan dibatalkan.',
+      createdAt: new Date(),
+    });
+    return;
+  }
+
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) throw new ApiError(404, 'USER_NOT_FOUND', 'Pengguna tidak ditemukan.');
   if (user.planId === 'free') {
@@ -271,6 +436,36 @@ export async function cancelRenewal(userId: string): Promise<void> {
 
 /** Mengaktifkan kembali perpanjangan otomatis. */
 export async function resumeRenewal(userId: string): Promise<void> {
+  if (isDemoBuild()) {
+    const userRow = demoStore.users.find((u) => u.id === userId);
+    if (!userRow) throw new ApiError(404, 'USER_NOT_FOUND', 'Pengguna tidak ditemukan.');
+    if (!userRow.cancelAtPeriodEnd) {
+      throw new ApiError(400, 'RENEWAL_ACTIVE', 'Perpanjangan otomatis memang sedang aktif.');
+    }
+    userRow.cancelAtPeriodEnd = false;
+    userRow.updatedAt = new Date();
+    demoStore.memberships
+      .filter((m) => m.userId === userId && m.status === 'active')
+      .forEach((m) => {
+        m.cancelAtPeriodEnd = false;
+        m.note = 'Perpanjangan otomatis diaktifkan kembali.';
+      });
+    demoStore.billingEvents.push({
+      id: `demo_event_${Math.random().toString(36).slice(2, 10)}`,
+      userId,
+      type: 'renewal_resumed',
+      planId: userRow.planId,
+      cycle: userRow.planCycle,
+      amount: 0,
+      status: 'demo',
+      provider: BILLING_PROVIDER,
+      providerRef: null,
+      note: 'Perpanjangan otomatis diaktifkan kembali.',
+      createdAt: new Date(),
+    });
+    return;
+  }
+
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) throw new ApiError(404, 'USER_NOT_FOUND', 'Pengguna tidak ditemukan.');
   if (!user.cancelAtPeriodEnd) {
@@ -442,18 +637,89 @@ export interface BillingOverview {
 }
 
 export async function getBillingOverview(user: SessionUser): Promise<BillingOverview> {
-  const [memberships, events] = await Promise.all([
-    prisma.membership.findMany({
-      where: { userId: user.id },
-      orderBy: { createdAt: 'desc' },
-      take: 20,
-    }),
-    prisma.billingEvent.findMany({
-      where: { userId: user.id },
-      orderBy: { createdAt: 'desc' },
-      take: 30,
-    }),
-  ]);
+  let memberships: {
+    id: string; planId: string; status: string; cycle: string; pricePaid: number;
+    paymentStatus: string; startedAt: Date; currentPeriodEnd: Date;
+    cancelAtPeriodEnd: boolean; note: string | null;
+  }[] = [];
+  let events: {
+    id: string; type: string; planId: string | null; cycle: string | null; amount: number;
+    status: string; provider: string; providerRef: string | null; note: string | null; createdAt: Date;
+  }[] = [];
+
+  if (isDemoBuild()) {
+    // Mode demo: tidak ada tabel membership/event. Tampilkan satu membership
+    // sintetis bila paket berbayar, supaya halaman billing tetap informatif.
+    if (user.planId !== 'free') {
+      const cycle = (user.planCycle as BillingCycle) ?? 'monthly';
+      const periodEnd = user.planExpiresAt ?? new Date(Date.now() + 30 * 86_400_000);
+      memberships = [
+        {
+          id: `demo_membership_${user.id}`,
+          planId: user.planId,
+          status: user.cancelAtPeriodEnd ? 'canceled' : 'active',
+          cycle,
+          pricePaid: planPrice(user.planId, cycle),
+          paymentStatus: 'demo',
+          startedAt: user.planStartedAt,
+          currentPeriodEnd: periodEnd,
+          cancelAtPeriodEnd: user.cancelAtPeriodEnd,
+          note: 'Keanggotaan demo (tanpa database).',
+        },
+      ];
+      events = [
+        {
+          id: `demo_event_${user.id}`,
+          type: 'plan_activated',
+          planId: user.planId,
+          cycle,
+          amount: planPrice(user.planId, cycle),
+          status: 'demo',
+          provider: BILLING_PROVIDER,
+          providerRef: null,
+          note: 'Aktivasi paket pada mode demo.',
+          createdAt: user.planStartedAt,
+        },
+      ];
+    }
+  } else {
+    const [m, e] = await Promise.all([
+      prisma.membership.findMany({
+        where: { userId: user.id },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+      }),
+      prisma.billingEvent.findMany({
+        where: { userId: user.id },
+        orderBy: { createdAt: 'desc' },
+        take: 30,
+      }),
+    ]);
+    memberships = m.map((x) => ({
+      id: x.id,
+      planId: x.planId,
+      status: x.status,
+      cycle: x.cycle,
+      pricePaid: x.pricePaid,
+      paymentStatus: x.paymentStatus,
+      startedAt: x.startedAt,
+      currentPeriodEnd: x.currentPeriodEnd,
+      cancelAtPeriodEnd: x.cancelAtPeriodEnd,
+      note: x.note,
+    }));
+    events = e.map((x) => ({
+      id: x.id,
+      type: x.type,
+      planId: x.planId,
+      cycle: x.cycle,
+      amount: x.amount,
+      status: x.status,
+      provider: x.provider,
+      providerRef: x.providerRef,
+      note: x.note,
+      createdAt: x.createdAt,
+    }));
+  }
 
   const plan = getPlan(user.planId);
   const cycle = (user.planCycle as BillingCycle) ?? 'monthly';

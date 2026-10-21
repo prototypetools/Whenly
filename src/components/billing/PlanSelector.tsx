@@ -19,6 +19,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Badge, Card, InfoBanner, ProgressBar, buttonClass, cx } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/Toast';
 import { apiPost, ApiClientError } from '@/lib/client';
+import { demoOp, isDemoMode } from '@/lib/demo/client';
 import { formatIDR } from '@/lib/money';
 
 export interface PlanCardData {
@@ -80,6 +81,34 @@ export function PlanSelector({
   async function startCheckout(plan: PlanCardData) {
     setBusy(true);
     try {
+      if (isDemoMode()) {
+        const result = await demoOp<{ activated: { planId: string; planCycle: string; currentPeriodEnd: string; amount: number; providerRef: string } }>({
+          op: 'plan.select',
+          planId: plan.id,
+          cycle,
+        });
+        setCheckout({
+          checkoutId: `demo_${plan.id}`,
+          planId: plan.id,
+          planName: plan.name,
+          cycle,
+          amount: cycle === 'yearly' ? plan.priceYearly : plan.priceMonthly,
+          provider: 'mock',
+          providerLabel: 'Sandbox internal (demo)',
+          status: 'pending',
+          sandbox: true,
+          note: 'Mode demo: pembayaran disimulasikan.',
+        } as CheckoutState);
+        setActivated({
+          planName: plan.name,
+          periodEnd: result.activated.currentPeriodEnd,
+          amount: result.activated.amount,
+          providerRef: result.activated.providerRef,
+        });
+        toast.success(`Paket ${plan.name} aktif (demo).`, `Berlaku sampai ${result.activated.currentPeriodEnd}.`);
+        router.refresh();
+        return;
+      }
       const result = await apiPost<{ checkout: CheckoutState }>('/api/billing/checkout', {
         planId: plan.id,
         cycle,
@@ -101,6 +130,22 @@ export function PlanSelector({
     if (!checkout) return;
     setBusy(true);
     try {
+      if (isDemoMode()) {
+        const result = await demoOp<{ activated: { currentPeriodEnd: string; amount: number; providerRef: string } }>({
+          op: 'plan.confirm',
+          planId: checkout.planId,
+          cycle: checkout.cycle,
+        });
+        setActivated({
+          planName: checkout.planName,
+          periodEnd: result.activated.currentPeriodEnd,
+          amount: result.activated.amount,
+          providerRef: result.activated.providerRef,
+        });
+        toast.success(`Paket ${checkout.planName} aktif (demo).`, `Berlaku sampai ${result.activated.currentPeriodEnd}.`);
+        router.refresh();
+        return;
+      }
       const result = await apiPost<{
         activated: { planId: string; planCycle: string; currentPeriodEnd: string; amount: number; providerRef: string };
       }>('/api/billing/confirm', { checkoutId: checkout.checkoutId });
@@ -123,7 +168,11 @@ export function PlanSelector({
   async function downgrade(plan: PlanCardData) {
     setBusy(true);
     try {
-      await apiPost('/api/plan/select', { planId: 'free' });
+      if (isDemoMode()) {
+        await demoOp({ op: 'plan.select', planId: 'free', cycle: 'monthly' });
+      } else {
+        await apiPost('/api/plan/select', { planId: 'free' });
+      }
       toast.success('Paket diubah ke Free.', 'Fitur berbayar dinonaktifkan, datamu tetap aman.');
       setDowngradeTarget(null);
       router.refresh();

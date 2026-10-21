@@ -3,7 +3,8 @@
 /**
  * Aksi per-langganan yang dipakai ulang di beberapa halaman.
  * Semua aksi memanggil API (yang menegakkan aturan paket di server) lalu
- * menyegarkan data halaman.
+ * menyegarkan data halaman. Pada `NEXT_PUBLIC_DEMO_MODE=true`, aksi
+ * dijalankan terhadap penyimpanan demo di localStorage.
  */
 
 import { useRouter } from 'next/navigation';
@@ -12,6 +13,7 @@ import { ConfirmDialog, Modal } from '@/components/ui/Modal';
 import { Field, InfoBanner, buttonClass } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/Toast';
 import { apiDelete, apiPatch, apiPost, ApiClientError } from '@/lib/client';
+import { demoDeleteSub, demoExtendSub, demoPaySub, demoUpdateSub, isDemoMode } from '@/lib/demo/client';
 
 function handleError(showToast: (message: string, detail?: string) => void, error: unknown, fallback: string) {
   if (error instanceof ApiClientError) {
@@ -43,6 +45,13 @@ export function MarkPaidButton({
   async function confirm() {
     setBusy(true);
     try {
+      if (isDemoMode()) {
+        const result = await demoPaySub('', id, 1);
+        toast.success(`${name} ditandai sudah dibayar.`, `Renewal berikutnya: ${result.nextRenewal}.`);
+        setOpen(false);
+        router.refresh();
+        return;
+      }
       const result = await apiPost<{ nextRenewal: string }>(`/api/subscriptions/${id}/pay`, { advance: true });
       toast.success(`${name} ditandai sudah dibayar.`, `Renewal berikutnya: ${result.nextRenewal}.`);
       setOpen(false);
@@ -96,6 +105,13 @@ export function ExtendButton({ id, name, cycleLabel }: { id: string; name: strin
   async function submit() {
     setBusy(true);
     try {
+      if (isDemoMode()) {
+        const result = await demoExtendSub('', id, steps);
+        toast.success(`Renewal ${name} diperpanjang ${steps} siklus.`, `Tanggal baru: ${result.nextRenewal}.`);
+        setOpen(false);
+        router.refresh();
+        return;
+      }
       const result = await apiPost<{ nextRenewal: string }>(`/api/subscriptions/${id}/extend`, { steps });
       toast.success(`Renewal ${name} diperpanjang ${steps} siklus.`, `Tanggal baru: ${result.nextRenewal}.`);
       setOpen(false);
@@ -159,6 +175,13 @@ export function DeleteSubscriptionButton({ id, name, compact }: { id: string; na
   async function remove() {
     setBusy(true);
     try {
+      if (isDemoMode()) {
+        await demoDeleteSub('', id);
+        toast.success(`${name} dihapus.`);
+        setOpen(false);
+        router.refresh();
+        return;
+      }
       await apiDelete(`/api/subscriptions/${id}`);
       toast.success(`${name} dihapus.`);
       setOpen(false);
@@ -211,6 +234,12 @@ export function StatusToggleButton({ id, name, status }: { id: string; name: str
   async function toggle() {
     setBusy(true);
     try {
+      if (isDemoMode()) {
+        await demoUpdateSub('', id, { status: nextStatus });
+        toast.success(nextStatus === 'active' ? `${name} diaktifkan kembali.` : `${name} dinonaktifkan.`, nextStatus === 'active' ? undefined : 'Langganan nonaktif tidak dihitung ke total pengeluaran.');
+        router.refresh();
+        return;
+      }
       await apiPatch(`/api/subscriptions/${id}`, { status: nextStatus });
       toast.success(nextStatus === 'active' ? `${name} diaktifkan kembali.` : `${name} dinonaktifkan.`, nextStatus === 'active' ? undefined : 'Langganan nonaktif tidak dihitung ke total pengeluaran.');
       router.refresh();
