@@ -1,3 +1,5 @@
+import './globals.css';
+
 import { AppShell, type ShellUser } from '@/components/layout/AppShell';
 import { requireUser } from '@/lib/auth';
 import { getEntitlements } from '@/lib/plans';
